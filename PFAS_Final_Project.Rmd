@@ -1,0 +1,99 @@
+---
+title: "PFAS"
+author: "Tay Holliday"
+output: pdf_document
+geometry: margin=2.54cm
+editor_options: 
+  chunk_output_type: console
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+getwd() #checks working directory
+
+library(lubridate)
+library(tidyverse)
+
+mytheme <- theme_classic(base_size = 14) +
+  theme(axis.text = element_text(color = "black"), 
+        legend.position = "top")
+theme_set(mytheme) #sets the theme for the project
+```
+
+```{r import data}
+WWTP_data_2019 <- read.csv('./Raw/2019_PFAS_WWTP_clean.csv', stringsAsFactors = TRUE) #imports WWTP data
+EPA_data_2018 <- read.csv('./Raw/2018_PFAS_public_supply.csv', stringsAsFactors = TRUE) #imports EPA Source Data
+
+#EPA_data_2018 sample date includes time of sample. This must be split first in order to change the sample.date column into a Date
+
+strsplit(EPA_data_2018$Sample.Date, " ") #Removes time sample is taken (Not entirely sure if this is needed/if it even works)
+
+WWTP_data_2019$sample.date <- as.Date(WWTP_data_2019$sample.date, format = "%m/%d/%Y")
+EPA_data_2018$Sample.Date <- as.Date(EPA_data_2018$Sample.Date, format = "%m/%d/%Y")
+```
+
+```{r wrangle data}
+chain.length.function <- function(x){
+    ifelse(x %in% c("PFBA","PFBS","PFHpA","PFHxA","PFPeS","PFPeA","4:2 FTS"), "short", "long")}
+#Creates a function to determine if Analyte is short or long
+
+EPA_Processed_2018 <- EPA_data_2018 %>%
+  mutate(chain.length = chain.length.function(Analyte)) 
+#Makes a chain.length column in the EPA Data Set
+
+qual.function <- function(x){
+  ifelse(x %in% "", "NA", EPA_Processed_2018$Result)
+} #Welcome to pain... This is a function that checks if there is a Qualifier. If there is, then takes the result value and puts it in the new column.
+
+EPA_Processed_2018 <- EPA_Processed_2018 %>%
+  mutate(qualifier.value = qual.function(Qualifiers))
+#This runs the function
+
+EPA_Processed_2018$qualifier.value <- as.numeric(EPA_Processed_2018$qualifier.value)
+#this changes that column to a numeric one
+
+change.result.function <- function(x){
+  ifelse(x %in% NA, EPA_Processed_2018$Result, NA)
+} #oh goodie. More fun! This function now checks the qualifier value column. If NA, it returns the result as normal. If there is a value, it returns NA for the result because it is considered non-detectable.
+
+EPA_Processed_2018$Result <- as.numeric(change.result.function(EPA_Processed_2018$qualifier.value))
+#Runs the result function.
+
+WWTP_Processed_2019 <- WWTP_data_2019 %>%
+  select(WWTP, Analyte, sample.date, ppt, lab.qual) %>%
+  mutate(chain.legth = chain.length.function(Analyte))
+  
+```
+
+```{r EPA source code}
+#Any locations with Analyte above 30? 70?
+#To do this, a simple pipe should do to filter out which analytes/site are above the given value.
+#EPA_Processed_2018$Result <- subset(EPA_Processed_2018$Result, !is.na()) #converts the result into a numeric value instead of a factor
+
+EPA_analyte_above_30 <- EPA_Processed_2018 %>%
+  filter(Result > 30)
+EPA_analyte_above_70 <- EPA_Processed_2018 %>%
+  filter(Result > 70)
+
+unique(EPA_Processed_2018$Map.Name) #This establishes that there are 44 unique map names
+unique(EPA_analyte_above_30$Map.Name) #11 Sites above 30 
+unique(EPA_analyte_above_70$Map.Name) #3 sites above 70
+
+#Total PFAS over 90
+Total_PFAS_EPA <- EPA_Processed_2018 %>%
+  group_by(Map.Name, Sample.Date) %>%
+  summarise(Total_PFAS = sum(Result, na.rm = TRUE)) %>%
+  select(Map.Name, Sample.Date, Total_PFAS)
+#YAY! Got it!
+
+```
+
+```{r WWTP code}
+#Summary stats: ND below 5; ND below 10; ND below 20…. (distribution bell curve)
+#Percentages...(how many ND / total detections under 30) Within any. Within GenX.See how many of which analytes have the worst percentage ratios  play with those trends
+#ND: Variability of lab qualifiers (know the level is above/below U) – by analyte per WWTP
+
+```
